@@ -4,3 +4,4 @@ build/*
 dist/*
 tihmdri.egg-info/*
 data/*
+notebooks/*

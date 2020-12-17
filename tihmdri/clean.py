@@ -237,7 +237,7 @@ class PreProcess(Base):
         self.doors = doors
         self.appliances = self.appliances[~self.appliances.location.isin(['A','B'])]
         self.appliances.location[self.appliances.location.isin(['Microwave','Toaster'])] = 'Oven'
-        self.movement = self.movement[~self.movement.location.isin(['D','Study','Living Room',"Front Door"])]
+        self.movement = self.movement[~self.movement.location.isin(['D','Study','Living Room',"Front Door",'Dining Room'])]
         self.activity = pd.concat([self.doors,self.movement,self.appliances])[['project','subject','datetimeObserved','location']]
         self.activity = pd.get_dummies(self.activity, columns=['location'], prefix='', prefix_sep='').copy()
 

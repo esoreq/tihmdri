@@ -1,7 +1,28 @@
 import numpy as np
 import scipy.interpolate as si
 import bz2
+from functools import wraps
 
+
+def timer(text=None, pre_text=None, post_text=None):
+    def wrapper(f):
+        @wraps(f)
+        def wrapped(other, *f_args, **f_kwargs):
+            if other.verbose:
+                _start = time.perf_counter()
+            out = f(other, *f_args, **f_kwargs)
+            if other.verbose:
+                elapsed = time.perf_counter() - _start
+                if pre_text != None:
+                    print(pre_text)
+                st = f"Finished {text} in:"
+                ed = f"{np.round(elapsed, 1)}"
+                print(f"{st:<60}{ed:>10} {'seconds':<10}")
+                if post_text != None:
+                    print(post_text)
+            return out
+        return wrapped
+    return wrapper
 
 def complexity(data):
     data = data.astype(int)

@@ -9,43 +9,34 @@ from pathlib import Path
 import _pickle as cPickle
 import datetime
 from datetime import timedelta
-from contextlib import ContextDecorator
 import itertools
+from functools import wraps
 
 
-class Timer(ContextDecorator):
-    def __init__(self, verbose=True, text=None, before_text=None, *args, **kwargs):
-        self.verbose = verbose
-        self.text = text
-        self.before_text = before_text
-        self.elapsed = 0
-        self._start = 0
-
-    def start(self):
-        if self.verbose:
-            self._start = time.perf_counter()
-
-    def stop(self):
-        if self.verbose:
-            self.elapsed = time.perf_counter() - self._start
-            if self.before_text != None:
-                print(self.before_text)
-            st = f"Finished {self.text} in:"
-            ed = f"{np.round(self.elapsed, 1)}"
-            print(f"{st:<60}{ed:>10} {'seconds':<10}")
-
-    def __enter__(self, *args, **kwargs):
-        self.start()
-        return self
-
-    def __exit__(self, *exc_info):
-        self.stop()
-
+def timer(text=None, pre_text=None, post_text=None):
+    def wrapper(f):
+        @wraps(f)
+        def wrapped(other, *f_args, **f_kwargs):
+            if other.verbose:
+                _start = time.perf_counter()
+            out = f(other, *f_args, **f_kwargs)
+            if other.verbose:
+                elapsed = time.perf_counter() - _start
+                if pre_text != None:
+                    print(pre_text)
+                st = f"Finished {text} in:"
+                ed = f"{np.round(elapsed, 1)}"
+                print(f"{st:<60}{ed:>10} {'seconds':<10}")
+                if post_text != None:
+                    print(post_text)
+            return out
+        return wrapped
+    return wrapper
 
 class Base:
 
     def __init__(self):
-        self.pickle_file = "" 
+        self.pickle_file = ""
 
     def set_attributes(self):
         self.domains = ["flags",
@@ -93,7 +84,7 @@ class Base:
     @staticmethod
     def load_csv_from_zip(_zip, csv_file):
         df = pd.read_csv(_zip.open(csv_file),
-                          encoding='unicode_escape', low_memory=False)
+                         encoding='unicode_escape', low_memory=False)
         return df
 
     @staticmethod
@@ -152,9 +143,9 @@ class LoadData(Base):
     input_path: str
     output_path: str
     datasets: list
-    verbose: bool = True
     reload_data: bool = True
     reload_subset: bool = True
+    verbose: bool = True
 
     def __post_init__(self):
         self.set_attributes()
@@ -166,33 +157,35 @@ class LoadData(Base):
             self.make_merged_file(data_tmp)
             self.save_merged_file()
 
-    @Timer(verbose, 'creating merged file')
+    @timer('creating merged file')
     def make_merged_file(self, data_tmp):
         for domain in self.domains:
             if len(self.datasets) > 1:
                 _tmp = pd.concat([getattr(data_tmp[dataset], domain)
-                                    for dataset in self.datasets])
+                                  for dataset in self.datasets])
                 _tmp = _tmp.drop_duplicates().reset_index(drop=True)
             else:
                 _tmp = getattr(data_tmp[self.datasets[0]], domain)
             setattr(self, domain, _tmp)
 
-    @Timer(verbose, 'saving merged file')
+    @timer('saving merged file')
     def save_merged_file(self):
         self.save_pickle()
 
-    @Timer(verbose, 'loading previously parsed file')
+    @timer('loading previously parsed file')
     def __load_past_file(self):
         self.load_pickle()
-        print(f'loading {self.pickle_file}', end=' ')
 
-    @Timer(verbose, 'parsing all datasets', f'{"="*20}')
+    @timer('parsing all datasets', "="*80)
     def __parse_dataset(self):
         _tmp = {}
         for dataset in self.datasets:
-            print(f'{"="*20}\nParsing DATASET {dataset}\n{"="*20}')
+            if self.verbose:
+                print(f'{"="*80}\nParsing DATASET {dataset}\n{"="*80}')
             _tmp[dataset] = PreProcess(name=dataset, input_path=self.input_path,
-                                       output_path=self.output_path, reload_data=self.reload_subset, verbose=self.verbose)
+                                       output_path=self.output_path,
+                                       reload_data=self.reload_subset,
+                                       verbose=self.verbose)
         return _tmp
 
 
@@ -216,7 +209,7 @@ class PreProcess(Base):
         else:
             self.__parse_domains()
 
-    @Timer(verbose, 'loading previously parsed file')
+    @timer('loading previously parsed file')
     def __load_past_file(self):
         self.load_pickle()
 
@@ -230,7 +223,7 @@ class PreProcess(Base):
         self.__parse_flags(_mapping, _zip)
         self.__parse_wellbeing(_mapping, _zip)
 
-    @Timer(verbose, 'parsing observations')
+    @timer('parsing observations')
     def __parse_observations(self, _zip, _mapping):
         df = self.__load_observation(_zip)
         df = self.__clean_observations(df, _zip, _mapping)
@@ -241,18 +234,18 @@ class PreProcess(Base):
         self.__parse_transitions()
         self.save_pickle()
 
-    @Timer(verbose, 'loading observation file')
+    @timer('loading observation file')
     def __load_observation(self, _zip):
         df = self.load_csv_from_zip(_zip, 'Observations.csv')
         df.type = pd.Categorical(df.type)
         return df
 
-    @Timer(verbose, 'cleaning observations')
+    @timer('cleaning observations')
     def __clean_observations(self, df, _zip, _mapping):
         _type = self.load_csv_from_zip(_zip, 'Observation-type.csv')
         # subset any event that is logged but contains no actual values to a Dataframe under null key
         idx_null = df[["valueBoolean", "valueState", "valueQuantity",
-                        "valueDatetimeStart", "valueDatetimeEnd"]].isnull().values.all(axis=1)
+                       "valueDatetimeStart", "valueDatetimeEnd"]].isnull().values.all(axis=1)
         df = df[idx_null == False]
         df['datetimeObserved'] = pd.to_datetime(df['datetimeObserved'])
         # filter out dates before 2014
@@ -270,10 +263,10 @@ class PreProcess(Base):
         df['subject'] = pd.Categorical(df['subject'])
         return df
 
-    @Timer(verbose, 'seperating observations to different domains')
+    @timer('seperating observations to different domains')
     def __parse_location(self,  df):
         df = df[df.location.notnull()].drop(columns=["datetimeReceived",
-                                                        "provider", "valueUnit", "valueDatetimeStart", "valueDatetimeEnd"])
+                                                     "provider", "valueUnit", "valueDatetimeStart", "valueDatetimeEnd"])
         self.location = df
         self.appliances = df[df.display == 'Does turn on domestic appliance'][[
             "project", "subject", "datetimeObserved", "location", "activity"]].copy()
@@ -281,13 +274,14 @@ class PreProcess(Base):
             "project", "subject", "datetimeObserved", "location", "activity"]].copy()
         self.temperature = df[(df.valueQuantity.notnull()) & (df.display == "Room temperature")][[
             "project", "subject", "datetimeObserved", "location", "valueQuantity"]].copy()
-        self.temperature = self.temperature[~self.temperature.location.isin(["Living Room", "Study"])].copy()
+        self.temperature = self.temperature[~self.temperature.location.isin(
+            ["Living Room", "Study"])].copy()
         self.light = df[(df.valueQuantity.notnull()) & (df.display == "Light")][[
             "project", "subject", "datetimeObserved", "location", "valueQuantity"]].copy()
         self.light = self.light[~self.light.location.isin(
             ["Living Room"])].copy()
 
-    @Timer(verbose, 'parsing activity')
+    @timer('parsing activity')
     def __parse_activity(self,  df):
         # convert movement, doors activity and appliances activity to a cleaned dataframe in day, hour and raw frequencies
         doors = []
@@ -309,10 +303,13 @@ class PreProcess(Base):
                              k[1]]*m, 'datetimeObserved': open, "Close": close, "delta": delta, "activity": [1]*m}))
 
         doors = pd.concat(doors)
-        doors = doors[~doors.location.isin(['B', 'Bathroom', 'C', 'Dining Room'])]
-        doors = doors[doors.delta < timedelta(minutes=15)].reset_index(drop=True)
+        doors = doors[~doors.location.isin(
+            ['B', 'Bathroom', 'C', 'Dining Room'])]
+        doors = doors[doors.delta < timedelta(
+            minutes=15)].reset_index(drop=True)
         self.doors = doors
-        self.appliances = self.appliances[~self.appliances.location.isin(['A', 'B'])].copy()
+        self.appliances = self.appliances[~self.appliances.location.isin([
+                                                                         'A', 'B'])].copy()
         self.appliances.loc[self.appliances.location.isin(
             ['Microwave', 'Toaster']), "location"] = 'Oven'
         self.movement = self.movement[~self.movement.location.isin(
@@ -322,7 +319,7 @@ class PreProcess(Base):
         self.activity = pd.get_dummies(self.activity, columns=[
                                        'location'], prefix='', prefix_sep='')
 
-    @Timer(verbose, 'parsing sleep')
+    @timer('parsing sleep')
     def __parse_sleep(self,  df):
         # TODO: load the new sleep data
         # self.sleep_disturbance = df[df.type.isin(['67233009'])].drop(columns=["datetimeReceived", "provider","type","device",
@@ -330,7 +327,7 @@ class PreProcess(Base):
         #                                                                         "device","valueDatetimeStart",
         #                                                                         "valueDatetimeEnd","activity"]).copy()
         df = df[df.type.isin(['258158006', '29373008', '248218005',
-                                 '60984000', '89129007', '421355008', '307155000'])].copy()
+                              '60984000', '89129007', '421355008', '307155000'])].copy()
         df['valueDatetimeStart'] = pd.to_datetime(df['valueDatetimeStart'])
         df['valueDatetimeEnd'] = pd.to_datetime(df['valueDatetimeEnd'])
         df['Start_End_logged'] = df.valueDatetimeStart.isnull()
@@ -339,24 +336,24 @@ class PreProcess(Base):
         df.loc[idx, "valueQuantity"] = (
             df.loc[idx, "valueDatetimeEnd"] - df.loc[idx, "valueDatetimeStart"]).dt.seconds
         self.sleep = df.drop(columns=["datetimeReceived", "device", "provider",
-                                       "location", "valueBoolean", "valueState", "valueUnit", "activity"])
+                                      "location", "valueBoolean", "valueState", "valueUnit", "activity"])
 
-    @Timer(verbose, 'parsing physiology')
+    @timer('parsing physiology')
     def __parse_physiology(self,  df):
         df = df[df.type.isin(
             ['8310-5', '55284-4', '29463-7', '251837008', '163636005', '248362003', '8462-4', '8480-6', '150456'])]
         self.physiology = df.drop(columns=["datetimeReceived", "provider", "location", "valueBoolean",
-                                            "valueState", "valueDatetimeStart", "valueDatetimeEnd"])
+                                           "valueState", "valueDatetimeStart", "valueDatetimeEnd"])
 
-    @Timer(verbose, 'parsing flags')
+    @timer('parsing flags')
     def __parse_flags(self, _mapping, _zip):
         df = pd.read_csv(_zip.open('Flags.csv'))
         _type = pd.read_csv(_zip.open('Flag-type.csv'))
         _cat = pd.read_csv(_zip.open('Flag-category.csv'))
         _val = pd.read_csv(_zip.open('FlagValidations.csv'))
         df = pd.merge(df, _val, how='outer', on=None,
-                       left_on="flagId", right_on="flag",
-                       suffixes=('df', '_val'), copy=True)
+                      left_on="flagId", right_on="flag",
+                      suffixes=('df', '_val'), copy=True)
         df.category = pd.Categorical(df.category)
         df.rename(columns={'subjectdf': 'subject'}, inplace=True)
         df['project_id'] = df.subject
@@ -377,7 +374,7 @@ class PreProcess(Base):
         self.flags = df
         self.save_pickle()
 
-    @Timer(verbose, 'parsing wellbeing')
+    @timer('parsing wellbeing')
     def __parse_wellbeing(self, _mapping, _zip):
         df = pd.read_csv(_zip.open('QuestionnaireResponses.csv'))
         df['datetimeAnswered'] = pd.to_datetime(df['datetimeAnswered'])
@@ -390,7 +387,8 @@ class PreProcess(Base):
         df = df.drop_duplicates()
         index = pd.MultiIndex.from_tuples(zip(df.subject, df.datetimeAnswered,
                                               df.question), names=['subject', 'datetimeAnswered', 'question'])
-        df = pd.DataFrame(df.answer.values, index=index,columns=['answer']).unstack()
+        df = pd.DataFrame(df.answer.values, index=index,
+                          columns=['answer']).unstack()
         df.columns = df.columns.droplevel()
         df = df.rename(columns=dict(zip(df.columns, questions)))
         df = df.reset_index()
@@ -402,7 +400,7 @@ class PreProcess(Base):
         self.wellbeing = df.copy()
         self.save_pickle()
 
-    @Timer(verbose, 'parsing transitions')
+    @timer('parsing transitions')
     def __parse_transitions(self):
         df = pd.concat([self.doors[self.doors.location != 'Fridge Door'], self.movement])[
             ['project', 'subject', 'datetimeObserved', 'location']].copy()
@@ -417,10 +415,23 @@ class PreProcess(Base):
                 df = pd.get_dummies(np.ravel_multi_index(
                     [ix[0:-1], ix[1::]], (len(nodes), len(nodes))))
                 df = df.rename(columns=dict(zip(df.columns, cols)))
-                df = subset.reset_index()[["datetimeObserved"]].diff().shift(-1).join(df)
-                df = df.rename(columns={"datetimeObserved":"delta"})
+                df = subset.reset_index(
+                )[["datetimeObserved"]].diff().shift(-1).join(df)
+                df = df.rename(columns={"datetimeObserved": "delta"})
                 df.insert(0, 'subject', subj)
-                df.insert(1, 'datetimeObserved', subset.datetimeObserved.values)
+                df.insert(1, 'datetimeObserved',
+                          subset.datetimeObserved.values)
                 tr.append(df)
         df = pd.concat(tr)
         self.transitions = df.dropna(subset=['delta'])
+
+
+def main():
+    input_path = '/Users/eyalsoreq/GoogleDrive/Projects/OnGoing/DRI/Data/'
+    output_path = '/Users/eyalsoreq/github/data/'
+    datasets = ['15', 'dri']
+    tihm = LoadData(input_path, output_path, datasets, False, False, True)
+
+
+if __name__ == "__main__":
+    main()

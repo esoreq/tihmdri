@@ -143,6 +143,8 @@ class LoadData(Base):
     input_path: str
     output_path: str
     datasets: list
+    subjectId: set = None
+    dri_id: set = None
     reload_data: bool = True
     reload_subset: bool = True
     verbose: bool = True
@@ -154,11 +156,11 @@ class LoadData(Base):
             self.__load_past_file()
         else:
             data_tmp = self.__parse_dataset()
-            self.make_merged_file(data_tmp)
+            self.merge_data(data_tmp)
             self.save_merged_file()
 
     @timer('creating merged file')
-    def make_merged_file(self, data_tmp):
+    def merge_data(self, data_tmp):
         for domain in self.domains:
             if len(self.datasets) > 1:
                 _tmp = pd.concat([getattr(data_tmp[dataset], domain)
@@ -167,6 +169,8 @@ class LoadData(Base):
             else:
                 _tmp = getattr(data_tmp[self.datasets[0]], domain)
             setattr(self, domain, _tmp)
+
+            
 
     @timer('saving merged file')
     def save_merged_file(self):
@@ -196,7 +200,8 @@ class PreProcess(Base):
     output_path: str
     verbose: bool = True
     reload_data: bool = True
-
+    
+# TODO: add a report that asks for the tihm zip files if they are not present  
     def __post_init__(self):
         self.set_attributes()
         self.source_file = str(
@@ -217,16 +222,17 @@ class PreProcess(Base):
         _zip = zipfile.ZipFile(self.source_file)
         _pid = pd.read_csv(_zip.open('Patients.csv'))
         _pid.insert(0, 'project', self.name)
-        _mapping = self.map(_pid.sabpId.values, _pid.subjectId.values)
+        # _mapping = self.map(_pid.sabpId.values, _pid.subjectId.values) 
+        self.subjectId = _pid.subjectId.values
         self.demographics = _pid
-        self.__parse_observations(_zip, _mapping)
-        self.__parse_flags(_mapping, _zip)
-        self.__parse_wellbeing(_mapping, _zip)
+        self.__parse_observations(_zip)
+        self.__parse_flags(_zip)
+        self.__parse_wellbeing(_zip)
 
     @timer('parsing observations')
-    def __parse_observations(self, _zip, _mapping):
+    def __parse_observations(self, _zip):
         df = self.__load_observation(_zip)
-        df = self.__clean_observations(df, _zip, _mapping)
+        df = self.__clean_observations(df, _zip)
         self.__parse_location(df)
         self.__parse_activity(df)
         self.__parse_sleep(df)
@@ -241,7 +247,7 @@ class PreProcess(Base):
         return df
 
     @timer('cleaning observations')
-    def __clean_observations(self, df, _zip, _mapping):
+    def __clean_observations(self, df, _zip):
         _type = self.load_csv_from_zip(_zip, 'Observation-type.csv')
         # subset any event that is logged but contains no actual values to a Dataframe under null key
         idx_null = df[["valueBoolean", "valueState", "valueQuantity",
@@ -257,7 +263,7 @@ class PreProcess(Base):
         df['display'] = df.type
         df = self.remap_cat('display', self.map(
             _type.display.values, _type.code.values), df)
-        df = self.remap_cat('subject', _mapping, df)
+        # df = self.remap_cat('subject', _mapping, df)
         df['project'] = self.name
         df['project'] = pd.Categorical(df['project'])
         df['subject'] = pd.Categorical(df['subject'])
@@ -346,7 +352,7 @@ class PreProcess(Base):
                                            "valueState", "valueDatetimeStart", "valueDatetimeEnd"])
 
     @timer('parsing flags')
-    def __parse_flags(self, _mapping, _zip):
+    def __parse_flags(self,_zip):
         df = pd.read_csv(_zip.open('Flags.csv'))
         _type = pd.read_csv(_zip.open('Flag-type.csv'))
         _cat = pd.read_csv(_zip.open('Flag-category.csv'))
@@ -357,7 +363,7 @@ class PreProcess(Base):
         df.category = pd.Categorical(df.category)
         df.rename(columns={'subjectdf': 'subject'}, inplace=True)
         df['project_id'] = df.subject
-        df = self.remap_cat('subject', _mapping, df)
+        # df = self.remap_cat('subject', _mapping, df)
         df = self.remap_cat('category', self.map(
             _cat.display.values, _cat.code.values), df)
         idx = self.find_duplicate(_type.display.values)[0]
@@ -375,14 +381,14 @@ class PreProcess(Base):
         self.save_pickle()
 
     @timer('parsing wellbeing')
-    def __parse_wellbeing(self, _mapping, _zip):
+    def __parse_wellbeing(self, _zip):
         df = pd.read_csv(_zip.open('QuestionnaireResponses.csv'))
         df['datetimeAnswered'] = pd.to_datetime(df['datetimeAnswered'])
         df = df.sort_values(by=['datetimeAnswered'])
         df = df.drop(columns=["questionnaire", "datetimeReceived"])
         df.question, questions = pd.factorize(df.question)
         df['project_id'] = df.subject
-        df = self.remap_cat('subject', _mapping, df)
+        # df = self.remap_cat('subject', _mapping, df)
         df = df.dropna().reset_index(drop=True)
         df = df.drop_duplicates()
         index = pd.MultiIndex.from_tuples(zip(df.subject, df.datetimeAnswered,
@@ -431,7 +437,7 @@ def main():
     output_path = '/Users/eyalsoreq/github/data/'
     datasets = ['15', 'dri']
     tihm = LoadData(input_path, output_path, datasets, False, False, True)
-
+    
 
 if __name__ == "__main__":
     main()

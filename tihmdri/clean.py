@@ -51,6 +51,7 @@ class Base:
                         "clinical",
                         "doors",
                         "appliances",
+                        "device_type",
                         "temperature",
                         "light"]
         for domain in self.domains:
@@ -249,6 +250,7 @@ class PreProcess(Base):
     @timer('cleaning observations')
     def __clean_observations(self, df, _zip):
         _type = self.load_csv_from_zip(_zip, 'Observation-type.csv')
+        self.device_type = _type
         # subset any event that is logged but contains no actual values to a Dataframe under null key
         idx_null = df[["valueBoolean", "valueState", "valueQuantity",
                        "valueDatetimeStart", "valueDatetimeEnd"]].isnull().values.all(axis=1)
@@ -261,6 +263,9 @@ class PreProcess(Base):
         df['activity'] = 1
         df['project_id'] = df.subject
         df['display'] = df.type
+        df['device_name'] = df.type.astype('category')
+        df = self.remap_cat('device_name', self.map(
+            _type.display.values, _type.code.values), df)
         df = self.remap_cat('display', self.map(
             _type.display.values, _type.code.values), df)
         # df = self.remap_cat('subject', _mapping, df)
@@ -347,9 +352,12 @@ class PreProcess(Base):
     @timer('parsing physiology')
     def __parse_physiology(self,  df):
         df = df[df.type.isin(
-            ['8310-5', '55284-4', '29463-7', '251837008', '163636005', '248362003', '8462-4', '8480-6', '150456'])]
+            ['8310-5', '55284-4', '8867-4', '29463-7', '251837008', '163636005', '248362003', '8462-4', '8480-6', '150456'])]       
+        df['device_name'] = df.type.astype('category')
+        df = self.remap_cat('device_name', self.map(
+            self.device_type.display.values, self.device_type.code.values), df)
         self.physiology = df.drop(columns=["datetimeReceived", "provider", "location", "valueBoolean",
-                                           "valueState", "valueDatetimeStart", "valueDatetimeEnd"])
+                                           "valueState", "valueDatetimeStart", "valueDatetimeEnd"])    
 
     @timer('parsing flags')
     def __parse_flags(self,_zip):

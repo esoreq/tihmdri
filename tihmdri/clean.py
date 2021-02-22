@@ -202,7 +202,7 @@ class PreProcess(Base):
     verbose: bool = True
     reload_data: bool = True
     
-# TODO: add a report that asks for the tihm zip files if they are not present  
+    # TODO: add a report that asks for the tihm zip files if they are not present  
     def __post_init__(self):
         self.set_attributes()
         self.source_file = str(

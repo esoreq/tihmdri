@@ -78,8 +78,8 @@ class Base:
 
     @staticmethod
     def remap_cat(_cat, _mapping, df):
-        df[_cat] = pd.Categorical(df[_cat])
-        df[_cat] = df[_cat].cat.rename_categories(_mapping)
+        df.loc[:,_cat] = pd.Categorical(df[_cat])
+        df.loc[:, _cat] = df[_cat].cat.rename_categories(_mapping)
         return df
 
     @staticmethod
@@ -144,8 +144,6 @@ class LoadData(Base):
     input_path: str
     output_path: str
     datasets: list
-    subjectId: set = None
-    dri_id: set = None
     reload_data: bool = True
     reload_subset: bool = True
     verbose: bool = True
@@ -352,7 +350,7 @@ class PreProcess(Base):
     @timer('parsing physiology')
     def __parse_physiology(self,  df):
         df = df[df.type.isin(
-            ['8310-5', '55284-4', '8867-4', '29463-7', '251837008', '163636005', '248362003', '8462-4', '8480-6', '150456'])]       
+            ['8310-5', '55284-4', '8867-4', '29463-7', '251837008', '163636005', '248362003', '8462-4', '8480-6', '150456'])].copy()       
         df['device_name'] = df.type.astype('category')
         df = self.remap_cat('device_name', self.map(
             self.device_type.display.values, self.device_type.code.values), df)

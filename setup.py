@@ -7,7 +7,7 @@ requirements = ["numpy>=1.19", "pandas>=1.1"]
 
 setup(
     name="tihmDri",
-    version="0.1.6",
+    version="0.1.7",
     author="Eyal Soreq",
     author_email="eyalsoreq@gmail.com",
     description="A package to process tihm iot datasets",
